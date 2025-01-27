@@ -1,0 +1,624 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: "Networking Immersion Day, Lab 01: Root stack template to create
+  VPC / Network ACL / Subnets / Route Tables / Internet Gateway / NAT Gateway / Security Groups with Rules / EC2 Instance Connect
+  Endpoint and create two EC2 instances one each in the public and private subnets."
+
+Metadata:
+  TemplateName: root-stack.yaml
+  TemplateType: Root Stack
+  Version: 1.0.0
+  Owner: Subhamay Bhattacharyya
+  ProjectName: Networking Immersion Day, Lab 01
+  Modification History:
+    - 1.0.0 - Jan 25, 2025 -- Initial Version
+  StepsToTest: Manually verify the Stack.
+  StepsToCleanup: Stack delete command
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      ################################## Project Name and Environment ##############################
+      - Label:
+          default: 'Project Name and Environment:'
+        Parameters:
+          - ProjectName
+          - Environment
+      ################################## GitHub Attributes #########################################
+      - Label:
+          default: 'GitHub Attributes:'
+        Parameters:
+          - GitHubRef
+          - GitHubURL
+          - GitHubWFRunNumber
+          - GitHubSHA
+          - GitHubRepository
+          - CiBuild
+      ################################## Code Repository ###########################################
+      - Label:
+          default: 'Code Repository:'
+        Parameters:
+          - CodeRepositoryS3Bucket
+
+    ParameterLabels:
+      ################################## Project Name and Environment ##############################
+      ProjectName:
+        default: "Name of the Project."
+      Environment:
+        default: "Name of the Deployment Environment."
+      ################################## GitHub Attributes #########################################
+      GitHubRef:
+        default: "GitHub Reference Branch or Tag."
+      GitHubURL:
+        default: "URL of the GitHub Repository."
+      GitHubWFRunNumber:
+        default: "GitHub Workflow Execution Run Number."
+      GitHubSHA:
+        default: "GitHub Commit SHA."
+      GitHubRepository:
+        default: "Name of the GitHub Repository."
+      CiBuild:
+        default: "Continuous Integration Build Identifier."
+      ################################## Code Repository Bucket ####################################
+      CodeRepositoryS3Bucket:
+        default: S3 Bucket where the nested stack templates are available.
+
+Parameters:
+  ###################################### Project Name and Environment ##############################
+  ProjectName:
+    Default: net-imm-day-lab-01
+    Description: The Project name to be used as a resource tag value.
+    Type: String
+    MinLength: "5"
+    MaxLength: "30"
+    AllowedPattern: ^[a-z0-9-]+$
+    ConstraintDescription: The length should be between 5 and 30, must contain only
+      lowercase alphabets, numbers, or dashes.
+  Environment:
+    Default: devl
+    Description: The Environment name to be used as a resource tag value.
+    Type: String
+    AllowedValues:
+      - devl
+      - test
+      - prod
+    ConstraintDescription: The Environment must be devl / test or prod
+  ###################################### GitHub Attributes #########################################
+  GitHubRef:
+    Default: ref_name
+    Description: GitHub Ref name to be used as a resource tag value.
+    Type: String
+    AllowedPattern: ^[a-zA-Z0-9/_-]+$
+    ConstraintDescription: The GitHub Ref Name can only contain alphanumeric
+      characters, slashes, underscores, and hyphens.
+  GitHubURL:
+    Default: https://github.com/owner/repository
+    Description: GitHub URL to be used as a resource tag value.
+    Type: String
+    AllowedPattern: ^https://github.com/[a-zA-Z0-9._-]+/[a-zA-Z0-9._-]+/?$
+    ConstraintDescription: The GitHub URL must start with 'https://github.com/' and
+      can only contain alphanumeric characters, dots, underscores, and hyphens.
+  GitHubWFRunNumber:
+    Default: "1"
+    Description: The Workflow run number to be used as a resource tag value.
+    Type: Number
+  GitHubSHA:
+    Default: d3b07384d113edec49eaa6238ad5ff00f6fb3796
+    Description: The sha value of the last commit to be used as a resource tag value.
+    Type: String
+    AllowedPattern: ^[a-fA-F0-9]{40}$
+    ConstraintDescription: The SHA value must be a 40-character hexadecimal string.
+  GitHubRepository:
+    Default: 0001-reponame-py-cft
+    Description: The GitHub Repository name to be used as a resource tag value.
+    Type: String
+    MinLength: "10"
+    MaxLength: "30"
+    AllowedPattern: ^\d{4}-[a-z]+(-[a-z]+)*$
+    ConstraintDescription: The repository length should be between 10 and 30, must
+      contain only lowercase letters, numbers, dashes, dots, and should start
+      with a letter.
+  CiBuild:
+    Default: ''
+    Description: Ci Build of the feature branch to be appended to a resource name.
+    Type: String
+  ###################################### Code Repository ###########################################
+  CodeRepositoryS3Bucket:
+    Default: subhamay-aws-cfn-nested-stack-templates-us-east-1
+    Description: S3 Bucket for the nested stack templates.
+    Type: String
+    AllowedPattern: ^[a-z0-9.-]{3,63}$
+    ConstraintDescription: The S3 bucket name must be between 3 and 63 characters
+      long, and can only contain lowercase letters, numbers, dots, and hyphens.
+
+######################################## Mapppings #################################################
+Mappings:
+  SubnetConfig:
+    VpcCidrBlock:
+      CIDR: 172.17.0.0/16
+    PrivateSubnetAZ1CidrBlock:
+      CIDR: 172.17.1.0/24
+    PrivateSubnetAZ2CidrBlock:
+      CIDR: 172.17.3.0/24
+    PublicSubnetAZ1CidrBlock:
+      CIDR: 172.17.2.0/24
+    PublicSubnetAZ2CidrBlock:
+      CIDR: 172.17.4.0/24
+
+Resources:
+  ###################################### VPC #######################################################
+  VPC:
+    Type: AWS::CloudFormation::Stack
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Properties:
+      TemplateURL: !Sub https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/vpc/vpc.yaml
+      Parameters:
+        VPCCidrBlock: !FindInMap
+          - SubnetConfig
+          - VpcCidrBlock
+          - CIDR
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        GitHubRef: !Ref GitHubRef
+        GitHubURL: !Ref GitHubURL
+        GitHubWFRunNumber: !Ref GitHubWFRunNumber
+        GitHubSHA: !Ref GitHubSHA
+        GitHubRepository: !Ref GitHubRepository
+        CiBuild: !Ref CiBuild
+      TimeoutInMinutes: 15
+  ###################################### Network ACL ###############################################
+  NetworkACL:
+    Type: AWS::CloudFormation::Stack
+    UpdateReplacePolicy: Delete
+    DeletionPolicy: Delete
+    Properties:
+      TemplateURL: !Sub https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/vpc/network-acl.yaml
+      Parameters:
+        VpcId: !GetAtt VPC.Outputs.VpcId
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        GitHubRef: !Ref GitHubRef
+        GitHubURL: !Ref GitHubURL
+        GitHubWFRunNumber: !Ref GitHubWFRunNumber
+        GitHubSHA: !Ref GitHubSHA
+        GitHubRepository: !Ref GitHubRepository
+        CiBuild: !Ref CiBuild
+      TimeoutInMinutes: 15
+  ###################################### Private Subnet AZ1 ########################################
+  PrivateSubnetAZ1:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/vpc/subnet.yaml
+      Parameters:
+        VpcId: !GetAtt VPC.Outputs.VpcId
+        SubnetCidrBlock: !FindInMap
+          - SubnetConfig
+          - PrivateSubnetAZ1CidrBlock
+          - CIDR
+        EnableIPV6Cidr: "false"
+        AvaliabilityZone: "us-east-1a"
+        AZ: "az1"
+        NetworkAclId: !GetAtt NetworkACL.Outputs.NetworkAclId
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        GitHubRef: !Ref GitHubRef
+        GitHubURL: !Ref GitHubURL
+        GitHubWFRunNumber: !Ref GitHubWFRunNumber
+        GitHubSHA: !Ref GitHubSHA
+        GitHubRepository: !Ref GitHubRepository
+        CiBuild: !Ref CiBuild
+      TimeoutInMinutes: 15
+  ###################################### Private Subnet AZ2 ########################################
+  PrivateSubnetAZ2:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/vpc/subnet.yaml
+      Parameters:
+        VpcId: !GetAtt VPC.Outputs.VpcId
+        SubnetCidrBlock: !FindInMap
+          - SubnetConfig
+          - PrivateSubnetAZ2CidrBlock
+          - CIDR
+        AvaliabilityZone: "us-east-1b"
+        AZ: "az2"
+        NetworkAclId: !GetAtt NetworkACL.Outputs.NetworkAclId
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        GitHubRef: !Ref GitHubRef
+        GitHubURL: !Ref GitHubURL
+        GitHubWFRunNumber: !Ref GitHubWFRunNumber
+        GitHubSHA: !Ref GitHubSHA
+        GitHubRepository: !Ref GitHubRepository
+        CiBuild: !Ref CiBuild
+      TimeoutInMinutes: 15
+  ###################################### Internet Gateway ##########################################
+  InternetGateway:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/vpc/internet-gateway.yaml
+      Parameters:
+        VpcId: !GetAtt VPC.Outputs.VpcId
+        EgressOnly: "false"
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        GitHubRef: !Ref GitHubRef
+        GitHubURL: !Ref GitHubURL
+        GitHubWFRunNumber: !Ref GitHubWFRunNumber
+        GitHubSHA: !Ref GitHubSHA
+        GitHubRepository: !Ref GitHubRepository
+        CiBuild: !Ref CiBuild
+      TimeoutInMinutes: 15
+  ###################################### Public Subnet AZ1 ########################################
+  PublicSubnetAZ1:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/vpc/subnet.yaml
+      Parameters:
+        VpcId: !GetAtt VPC.Outputs.VpcId
+        SubnetCidrBlock: !FindInMap
+          - SubnetConfig
+          - PublicSubnetAZ1CidrBlock
+          - CIDR
+        EnableIPV6Cidr: "false"
+        AvaliabilityZone: "us-east-1a"
+        AZ: "az1"
+        InternetGatewayId: !GetAtt InternetGateway.Outputs.InternetGatewayId
+        NetworkAclId: !GetAtt NetworkACL.Outputs.NetworkAclId
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        GitHubRef: !Ref GitHubRef
+        GitHubURL: !Ref GitHubURL
+        GitHubWFRunNumber: !Ref GitHubWFRunNumber
+        GitHubSHA: !Ref GitHubSHA
+        GitHubRepository: !Ref GitHubRepository
+        CiBuild: !Ref CiBuild
+      TimeoutInMinutes: 15
+  ###################################### Public Subnet AZ2 ########################################
+  PublicSubnetAZ2:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/vpc/subnet.yaml
+      Parameters:
+        VpcId: !GetAtt VPC.Outputs.VpcId
+        SubnetCidrBlock: !FindInMap
+          - SubnetConfig
+          - PublicSubnetAZ2CidrBlock
+          - CIDR
+        EnableIPV6Cidr: "false"
+        AvaliabilityZone: "us-east-1b"
+        AZ: "az2"
+        InternetGatewayId: !GetAtt InternetGateway.Outputs.InternetGatewayId
+        NetworkAclId: !GetAtt NetworkACL.Outputs.NetworkAclId
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        GitHubRef: !Ref GitHubRef
+        GitHubURL: !Ref GitHubURL
+        GitHubWFRunNumber: !Ref GitHubWFRunNumber
+        GitHubSHA: !Ref GitHubSHA
+        GitHubRepository: !Ref GitHubRepository
+        CiBuild: !Ref CiBuild
+      TimeoutInMinutes: 15
+  ###################################### Nat Gateway AZ-1 ##########################################
+  NatGatewayAZ1:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/vpc/nat-gateway.yaml
+      Parameters:
+        PrivateRouteTableId: !GetAtt PrivateSubnetAZ1.Outputs.RouteTableId
+        PublicSubnetId: !GetAtt PublicSubnetAZ1.Outputs.SubnetId
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        GitHubRef: !Ref GitHubRef
+        GitHubURL: !Ref GitHubURL
+        GitHubWFRunNumber: !Ref GitHubWFRunNumber
+        GitHubSHA: !Ref GitHubSHA
+        GitHubRepository: !Ref GitHubRepository
+        CiBuild: !Ref CiBuild
+      TimeoutInMinutes: 15
+  ###################################### Nat Gateway AZ-2 ##########################################
+  NatGatewayAZ2:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/vpc/nat-gateway.yaml
+      Parameters:
+        PrivateRouteTableId: !GetAtt PrivateSubnetAZ2.Outputs.RouteTableId
+        PublicSubnetId: !GetAtt PublicSubnetAZ2.Outputs.SubnetId
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        GitHubRef: !Ref GitHubRef
+        GitHubURL: !Ref GitHubURL
+        GitHubWFRunNumber: !Ref GitHubWFRunNumber
+        GitHubSHA: !Ref GitHubSHA
+        GitHubRepository: !Ref GitHubRepository
+        CiBuild: !Ref CiBuild
+      TimeoutInMinutes: 15
+  ###################################### EC2 Security Group ########################################
+  EC2SecurityGroup:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/vpc/security-group.yaml"
+      Parameters:
+        SecurityGroupBaseName: "ec2-sg"
+        SecurityGroupDescription: "Enable SSH access via port 22 IPv4"
+        VpcId: !GetAtt VPC.Outputs.VpcId
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        GitHubRef: !Ref GitHubRef
+        GitHubURL: !Ref GitHubURL
+        GitHubWFRunNumber: !Ref GitHubWFRunNumber
+        GitHubSHA: !Ref GitHubSHA
+        GitHubRepository: !Ref GitHubRepository
+        CiBuild: !Ref CiBuild
+      TimeoutInMinutes: 15
+  ###################################### EC2 Security Group Rule - Allow SSH #######################
+  EC2SecurityGroupIngressSSH:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/vpc/sg-rule.yaml"
+      Parameters:
+        RuleType: "ingress"
+        CidrType: "ipv4"
+        SecurityGroupId: !GetAtt EC2SecurityGroup.Outputs.SecurityGroupId
+        IPProtocol: "tcp"
+        FromPort: "22"
+        ToPort: "22"
+        CidrIp: "0.0.0.0/0"
+        RuleDescription: "Allow SSH ingress"
+      TimeoutInMinutes: 15
+  ###################################### EC2 Security Group Rule - Allow HTTP ######################
+  EC2SecurityGroupIngressHTTP:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/vpc/sg-rule.yaml"
+      Parameters:
+        RuleType: "ingress"
+        CidrType: "ipv4"
+        SecurityGroupId: !GetAtt EC2SecurityGroup.Outputs.SecurityGroupId
+        IPProtocol: "tcp"
+        FromPort: "80"
+        ToPort: "80"
+        CidrIp: "0.0.0.0/0"
+        RuleDescription: "Allow All ingress"
+      TimeoutInMinutes: 15
+  ###################################### EC2 Security Group Rule - Allow HTTP ######################
+  EC2SecurityGroupIngressAll:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/vpc/sg-rule.yaml"
+      Parameters:
+        RuleType: "ingress"
+        CidrType: "ipv4"
+        SecurityGroupId: !GetAtt EC2SecurityGroup.Outputs.SecurityGroupId
+        IPProtocol: "tcp"
+        FromPort: "0"
+        ToPort: "65535"
+        SourceSecurityGroupId: !GetAtt EC2SecurityGroup.Outputs.SecurityGroupId
+        RuleDescription: "Allow ingress traffic ALL protocol for ALL ports."
+      TimeoutInMinutes: 15
+  ###################################### EC2 Instance Connect Endpoint #############################
+  EC2InstanceConnectEndpoint:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/vpc/ec2-instance-connect.yaml"
+      Parameters:
+        SecurityGroupId: !GetAtt EC2SecurityGroup.Outputs.SecurityGroupId
+        SubnetId: !GetAtt PrivateSubnetAZ1.Outputs.SubnetId
+        PreserveClientIp: "false"
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        GitHubRef: !Ref GitHubRef
+        GitHubURL: !Ref GitHubURL
+        GitHubWFRunNumber: !Ref GitHubWFRunNumber
+        GitHubSHA: !Ref GitHubSHA
+        GitHubRepository: !Ref GitHubRepository
+        CiBuild: !Ref CiBuild
+      TimeoutInMinutes: 15
+  ###################################### EC2 Private Instance ######################################
+  Ec2PvtInstance:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/ec2/ec2-instance.yaml"
+      Parameters:
+        SubnetId: !GetAtt PrivateSubnetAZ1.Outputs.SubnetId
+        SecurityGroupId: !GetAtt EC2SecurityGroup.Outputs.SecurityGroupId
+        SubnetType: "private"
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        GitHubRef: !Ref GitHubRef
+        GitHubURL: !Ref GitHubURL
+        GitHubWFRunNumber: !Ref GitHubWFRunNumber
+        GitHubSHA: !Ref GitHubSHA
+        GitHubRepository: !Ref GitHubRepository
+        CiBuild: !Ref CiBuild
+      TimeoutInMinutes: 15
+  ###################################### EC2 Private Instance ######################################
+  Ec2PubInstance:
+    DeletionPolicy: Delete
+    UpdateReplacePolicy: Retain
+    Type: AWS::CloudFormation::Stack
+    Properties:
+      TemplateURL: !Sub "https://${CodeRepositoryS3Bucket}.s3.amazonaws.com/ec2/ec2-instance.yaml"
+      Parameters:
+        SubnetId: !GetAtt PublicSubnetAZ1.Outputs.SubnetId
+        SecurityGroupId: !GetAtt EC2SecurityGroup.Outputs.SecurityGroupId
+        SubnetType: "public"
+        ProjectName: !Ref ProjectName
+        Environment: !Ref Environment
+        GitHubRef: !Ref GitHubRef
+        GitHubURL: !Ref GitHubURL
+        GitHubWFRunNumber: !Ref GitHubWFRunNumber
+        GitHubSHA: !Ref GitHubSHA
+        GitHubRepository: !Ref GitHubRepository
+        CiBuild: !Ref CiBuild
+      TimeoutInMinutes: 15
+
+Outputs:
+  ###################################### VPC #######################################################
+  VpcId:
+    Description: Vpc Id
+    Value: !GetAtt VPC.Outputs.VpcId
+  VpcCidrBlock:
+    Description: VPC CI/DR Block
+    Value: !GetAtt VPC.Outputs.CidrBlock
+  VpcCidrBlockAssociations:
+    Description: VPC CI/DR Block Associations
+    Value: !GetAtt VPC.Outputs.CidrBlockAssociations
+  VpcDefaultNetworkAcl:
+    Description: VPC Default ACL
+    Value: !GetAtt VPC.Outputs.DefaultNetworkAcl
+  VpcDefaultSecurityGroup:
+    Description: VPC Default Security Group
+    Value: !GetAtt VPC.Outputs.DefaultSecurityGroup
+  ###################################### Network ACL ################################################
+  NetworkAclId:
+    Description: Network ACL Id
+    Value: !GetAtt NetworkACL.Outputs.NetworkAclId
+  ###################################### Private Subnet - AZ1 ######################################
+  PrivateSubnetAZ1Id:
+    Description: Private Subnet-AZ1 Id
+    Value: !GetAtt PrivateSubnetAZ1.Outputs.SubnetId
+  PrivateSubnetAZ1AvailabilityZone:
+    Description: Private Subnet-AZ1 Availability Zone
+    Value: !GetAtt PrivateSubnetAZ1.Outputs.AvailabilityZone
+  PrivateSubnetAZ1AvailabilityZoneId:
+    Description: Private Subnet-AZ1 Availability ZoneId
+    Value: !GetAtt PrivateSubnetAZ1.Outputs.AvailabilityZoneId
+  PrivateSubnetAZ1CidrBlock:
+    Description: Private Subnet-AZ1 CI/DR Block
+    Value: !GetAtt PrivateSubnetAZ1.Outputs.CidrBlock
+  PrivateSubnetAZ1NetworkAclAssociationId:
+    Description: Private Subnet-AZ1 Network Acl Association Id
+    Value: !GetAtt PrivateSubnetAZ1.Outputs.NetworkAclAssociationId
+  PrivateSubnetAZ1RTAssociationId:
+    Description: Private Subnet-AZ1 Subnet Route Table Association Id
+    Value: !GetAtt PrivateSubnetAZ1.Outputs.RouteTableAssociationId
+  ###################################### Private Subnet - AZ2 ######################################
+  PrivateSubnetAZ2Id:
+    Description: Private Subnet-AZ2 Id
+    Value: !GetAtt PrivateSubnetAZ2.Outputs.SubnetId
+  PrivateSubnetAZ2AvailabilityZone:
+    Description: Private Subnet-AZ2 Availability Zone
+    Value: !GetAtt PrivateSubnetAZ2.Outputs.AvailabilityZone
+  PrivateSubnetAZ2AvailabilityZoneId:
+    Description: Private Subnet-AZ2 Availability ZoneId
+    Value: !GetAtt PrivateSubnetAZ2.Outputs.AvailabilityZoneId
+  PrivateSubnetAZ2CidrBlock:
+    Description: Private Subnet-AZ2 CI/DR Block
+    Value: !GetAtt PrivateSubnetAZ2.Outputs.CidrBlock
+  PrivateSubnetAZ2NetworkAclAssociationId:
+    Description: Private Subnet-AZ2 Network Acl Association Id
+    Value: !GetAtt PrivateSubnetAZ2.Outputs.NetworkAclAssociationId
+  PrivateSubnetAZ2RTAssociationId:
+    Description: Private Subnet-AZ2 Subnet Route Table Association Id
+    Value: !GetAtt PrivateSubnetAZ2.Outputs.RouteTableAssociationId
+  ###################################### Internet Gateway ##########################################
+  InternetGatewayId:
+    Description: Internet Gateway Id
+    Value: !GetAtt InternetGateway.Outputs.InternetGatewayId
+  ###################################### Public Subnet - AZ1 #######################################
+  PublicSubnetAZ1Id:
+    Description: Public Subnet-AZ1 Id
+    Value: !GetAtt PublicSubnetAZ1.Outputs.SubnetId
+  PublicSubnetAZ1AvailabilityZone:
+    Description: Public Subnet-AZ1 Availability Zone
+    Value: !GetAtt PublicSubnetAZ1.Outputs.AvailabilityZone
+  PublicSubnetAZ1AvailabilityZoneId:
+    Description: Public Subnet-AZ1 Availability ZoneId
+    Value: !GetAtt PublicSubnetAZ1.Outputs.AvailabilityZoneId
+  PublicSubnetAZ1CidrBlock:
+    Description: Public Subnet-AZ1 CI/DR Block
+    Value: !GetAtt PublicSubnetAZ1.Outputs.CidrBlock
+  PublicSubnetAZ1NetworkAclAssociationId:
+    Description: Public Subnet-AZ1 Network Acl Association Id
+    Value: !GetAtt PublicSubnetAZ1.Outputs.NetworkAclAssociationId
+  PublicSubnetAZ1RTAssociationId:
+    Description: Public Subnet-AZ1 Subnet Route Table Association Id
+    Value: !GetAtt PublicSubnetAZ1.Outputs.RouteTableAssociationId
+  ###################################### Public Subnet - AZ2 #######################################
+  PublicSubnetAZ2Id:
+    Description: Public Subnet-AZ2 Id
+    Value: !GetAtt PublicSubnetAZ2.Outputs.SubnetId
+  PublicSubnetAZ2AvailabilityZone:
+    Description: Public Subnet-AZ2 Availability Zone
+    Value: !GetAtt PublicSubnetAZ2.Outputs.AvailabilityZone
+  PublicSubnetAZ2AvailabilityZoneId:
+    Description: Public Subnet-AZ2 Availability ZoneId
+    Value: !GetAtt PublicSubnetAZ2.Outputs.AvailabilityZoneId
+  PublicSubnetAZ2CidrBlock:
+    Description: Public Subnet-AZ2 CI/DR Block
+    Value: !GetAtt PublicSubnetAZ2.Outputs.CidrBlock
+  PublicSubnetAZ2NetworkAclAssociationId:
+    Description: Public Subnet-AZ2 Network Acl Association Id
+    Value: !GetAtt PublicSubnetAZ2.Outputs.NetworkAclAssociationId
+  PublicSubnetAZ2RTAssociationId:
+    Description: Public Subnet-AZ2 Subnet Route Table Association Id
+    Value: !GetAtt PublicSubnetAZ2.Outputs.RouteTableAssociationId
+  ###################################### Nat Gateway AZ-1 ##########################################
+  NatGatewayAZ1ElasticIp:
+    Description: Nat Gateway AZ-1 Elastic Ip
+    Value: !GetAtt NatGatewayAZ1.Outputs.ElasticIp
+  NatGatewayAZ1Id:
+    Description: Nat Gateway AZ-1 Id
+    Value: !GetAtt NatGatewayAZ1.Outputs.NatGatewayId
+  ###################################### Nat Gateway AZ-2 ##########################################
+  NatGatewayAZ2ElasticIp:
+    Description: Nat Gateway AZ-2 Elastic Ip
+    Value: !GetAtt NatGatewayAZ1.Outputs.ElasticIp
+  NatGatewayAZ2Id:
+    Description: Nat Gateway AZ-2 Id
+    Value: !GetAtt NatGatewayAZ1.Outputs.NatGatewayId
+  ###################################### Security Group ############################################
+  EC2SecurityGroupId:
+    Description: EC2 Security Group Id
+    Value: !GetAtt EC2SecurityGroup.Outputs.SecurityGroupId
+  ###################################### EC2 Instance Connect Endpoint #############################
+  EC2InstanceConnectEndpoint:
+    Description: EC2 Instance Connect Endpoint Id
+    Value: !GetAtt EC2InstanceConnectEndpoint.Outputs.EC2InstanceConnectEndpoint
+  EC2InstanceConnectId:
+    Description: EC2 Instance Connect Endpoint Id
+    Value: !GetAtt EC2InstanceConnectEndpoint.Outputs.EC2InstanceConnectId
+  ###################################### EC2 Private Instance ######################################
+  Ec2PvtInstanceId:
+    Description: The ID of the instance.
+    Value: !GetAtt Ec2PvtInstance.Outputs.InstanceId
+  Ec2PvtInstanceDnsName:
+    Description: The private DNS name of the specified instance.
+    Value: !GetAtt Ec2PvtInstance.Outputs.PrivateDnsName
+  EC2PvtInstanceIp:
+    Description: The private IP address of the specified instance.
+    Value: !GetAtt Ec2PvtInstance.Outputs.PrivateIp
+  ###################################### EC2 Public Instance ######################################
+  Ec2PubInstanceId:
+    Description: The ID of the instance.
+    Value: !GetAtt Ec2PubInstance.Outputs.InstanceId
+  Ec2PubDnsName:
+    Description: The private DNS name of the specified instance.
+    Value: !GetAtt Ec2PubInstance.Outputs.PublicDnsName
+  EC2PubInstanceIp:
+    Description: The private IP address of the specified instance.
+    Value: !GetAtt Ec2PubInstance.Outputs.PublicIp

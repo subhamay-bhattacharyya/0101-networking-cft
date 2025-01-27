@@ -1,0 +1,12 @@
+#### Version: 1.0.0
+Updated release with enhanced documentation and architecture diagram
+Version: 1.0.0
+Author: Subhamay Bhattacharyya
+Created: 26-Jan-2025
+Updated:
+Description: This repository contains the CloudFormation nested stack templates and enhanced documentation.
+
+## Features
+- Added architecture diagram to README.md
+- Updated README.md with detailed sections: About the Project, Getting Started, Deployment, Contributing, License, and Contact
+- Improved documentation for better clarity and usability
